@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta name="keywords" content="mandelbrot, gpu, webgl, three.js, fractal, opengl es, shader">
+        <meta name="description" content="Mandelbrot explorer utilising WebGL for fast, real time GPU rendering.">
+        <meta property="og:title" content="WebGL Mandelbrot Explorer">
+        <meta property="og:type" content="website">
+        <meta property="og:url" content="http://homepages.slingshot.co.nz/~alpersj/mandelbrot/">
+        <meta property="og:image" content="http://homepages.slingshot.co.nz/~alpersj/mandelbrot/sample.png">
+        <title>WebGL Mandelbrot Explorer</title>
+        <style>
+        body {margin: 0;overflow: hidden}
+        #instructions {position: absolute;top:0;left:0;margin: 0.5em;background:#eee;float:left;padding:0.2em 0.4em;font: 13px/1.3em "Trebuchet MS", Verdana, Arial, Helvetica, sans-serif}
+        </style>
+        <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.3/jquery.min.js"></script>
+        <script src="//cdnjs.cloudflare.com/ajax/libs/three.js/r67/three.min.js"></script>
+    </head>
+    <body>
+        <p id="instructions">Use the arrow keys to pan, A and Z keys to zoom, S and X keys to change the threshold.</p>
+        <script id="mandelbrot-vertex" type="x-shader/x-vertex">
+            precision highp float;
+            varying vec2 pos;
+
+            void main () {
+                pos = position.xy;
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }
+        </script>
+
+        <script id="mandelbrot-fragment" type="x-shader/x-fragment">
+            precision highp float;
+            varying vec2 pos;
+            uniform int iterations;
+            uniform float threshold;
+            uniform int lt;
+            vec3 clr1 = vec3(0.15, 0, 0.3);
+            vec3 clr2 = vec3(0.4, 0.6, 0.8);
+            vec3 clr3 = vec3(1, 1, 1);
+
+            void main () {
+                vec2 fractal = pos;
+                float clr = 0.0, red, green, blue;
+
+                for (int i = 0; i <= 10000; i++) {
+
+                    fractal = pos + vec2(
+                        fractal.x * fractal.x - fractal.y * fractal.y,
+                        2.0 * fractal.x * fractal.y
+                    );
+
+                    if (i == iterations || (lt == 1 && fractal.x * fractal.x + fractal.y * fractal.y < threshold || lt == 0 && fractal.x * fractal.x + fractal.y * fractal.y >= threshold)) {
+                        if (i == iterations) {
+                            gl_FragColor = vec4(0.9, 0.9, 0.9, 1);
+                        } else {
+                            clr = log2(float(i)) / log2(float(iterations));
+                            if (clr < 0.5) {
+                                clr = clr / 0.5;
+                                red = clr * (clr2.x - clr1.x) + clr1.x;
+                                green = clr * (clr2.y - clr1.y) + clr1.y;
+                                blue = clr * (clr2.z - clr1.z) + clr1.z;
+                            } else {
+                                clr = (clr - 0.5) / 0.5;
+                                red = clr * (clr2.x - clr1.x) + clr1.x;
+                                green = clr * (clr2.y - clr1.y) + clr1.y;
+                                blue = clr * (clr2.z - clr1.z) + clr1.z;
+                            }
+                            gl_FragColor = vec4(red, green, blue, 1);
+                        }
+                        break;
+                    }
+                }
+            }
+        </script>
+
+        <script>
+            $(document).ready(function() {
+                setTimeout(function(){
+                    $("p").fadeOut(1000);
+                }, 30000);
+            });
+            var width = window.innerWidth;
+            var height = window.innerHeight;
+            var x, y, dz = 1, dx = dy = di = dt = 0, lt = 1;
+
+            $(document).ready(function() {
+                $(window).on('keydown', function(e) {
+                    var f = camera.position.z / 100;
+                    switch(e.which) {
+                        case 65:
+                            dz = 1 / 1.016
+                            break;
+                        case 90:
+                            dz = 1.016;
+                            break;
+                        case 40:
+                            dy = -f;
+                            break;
+                        case 39:
+                            dx = f;
+                            break;
+                        case 38:
+                            dy = f;
+                            break;
+                        case 37:
+                            dx = -f;
+                            break;
+                        case 83:
+                            dt = lt? dt + 0.001 : dt + 0.006;
+                            break;
+                        case 88:
+                            dt = lt? dt - 0.001 : dt - 0.006;
+                            break;
+                    }
+                }).on('keyup', function(e) {
+                    switch(e.which) {
+                        case 65:
+                        case 90:
+                            dz = 1;
+                            break;
+                        case 40:
+                        case 38:
+                            dy = 0;
+                            break;
+                        case 39:
+                        case 37:
+                            dx = 0;
+                            break;
+                        case 83:
+                        case 88:
+                            dt = 0;
+                            break;
+                    }
+                });
+            });
+
+            var scene = new THREE.Scene();
+            var camera = new THREE.PerspectiveCamera(50, width / height, 1 / Math.pow(2, 16), 1000);
+            camera.position.x = -0.562;
+            camera.position.y = -0.064;
+            camera.position.z = 2;
+            var iterations = 70;
+            var threshold = 0.05;
+            var lt = 1;
+
+            // create canvas
+            var renderer = new THREE.WebGLRenderer();
+            renderer.setSize(width, height);
+            document.body.appendChild(renderer.domElement);
+
+            // create mandelbrot mesh
+            var geometry = new THREE.PlaneGeometry(4, 3, 0);
+            var material = new THREE.ShaderMaterial({
+                uniforms: {
+                    zoom: { type: 'f', value: 1 },
+                    iterations: { type: 'i', value: 100},
+                    threshold: { type: 'f', value: 0.05},
+                    lt: { type: 'i', value: 1}
+                },
+                vertexShader: document.getElementById('mandelbrot-vertex').innerHTML,
+                fragmentShader: document.getElementById('mandelbrot-fragment').innerHTML
+            });
+            var mesh = new THREE.Mesh(geometry, material);
+
+            scene.add(mesh);
+
+            function render (delta) {
+                camera.position.x += dx;
+                camera.position.y += dy;
+                camera.position.z *= dz;
+                iterations += di;
+                iterations = Math.max(20, Math.min(500, iterations));
+                if (camera.position.z < 0.000000001) return;
+                mesh.material.uniforms.iterations.value = iterations;
+                threshold += dt;
+                threshold = Math.min(Math.max(threshold, 0), 4);
+                mesh.material.uniforms.threshold.value = threshold;
+                mesh.material.uniforms.lt.value = (threshold < 1)? 1 : 0;
+                
+                renderer.render(scene, camera);
+                requestAnimationFrame(render);
+            }
+
+            render();
+        </script>
+        <script>
+        (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+        (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+        m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+        })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+        ga('create', 'UA-66920143-1', 'auto');
+        ga('send', 'pageview');
+        </script>
+    </body>
+</html>
